@@ -128,7 +128,10 @@ def get_last_schedule_hash(person):
     hash_file = Path(f"data/last_schedule_hash_{person.replace(',', '_').replace(' ', '_')}.txt")
     if hash_file.exists():
         with open(hash_file, 'r') as f:
-            return f.read().strip()
+            hash_value = f.read().strip()
+            logger.debug(f"Read hash value from file: {hash_value[:8]}...")
+            return hash_value
+    logger.info(f"No previous hash found for {person}")
     return None
 
 
@@ -139,8 +142,22 @@ def save_schedule_hash(person, schedule_text):
     Args:
         person: The person's name
         schedule_text: The schedule text to hash
+        
+    Returns:
+        The hash value
     """
-    hash_value = hashlib.sha256(schedule_text.encode('utf-8')).hexdigest()
+    # Extract only the schedule part from the output (remove log messages)
+    schedule_match = re.search(r'=== Assignment for .+? ===.*?(?=\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}|\Z)', 
+                              schedule_text, re.DOTALL)
+    
+    if schedule_match:
+        schedule_content = schedule_match.group(0).strip()
+    else:
+        schedule_content = schedule_text.strip()
+    
+    hash_value = hashlib.sha256(schedule_content.encode('utf-8')).hexdigest()
+    logger.debug(f"Generated hash value: {hash_value[:8]}...")
+    
     hash_file = Path(f"data/last_schedule_hash_{person.replace(',', '_').replace(' ', '_')}.txt")
     
     # Create the data directory if it doesn't exist
@@ -149,6 +166,7 @@ def save_schedule_hash(person, schedule_text):
     with open(hash_file, 'w') as f:
         f.write(hash_value)
     
+    logger.debug(f"Saved hash value to file: {hash_value[:8]}...")
     return hash_value
 
 
@@ -302,6 +320,26 @@ def format_schedule_notification(details):
     return message
 
 
+def extract_schedule_from_output(output_text):
+    """
+    Extract just the schedule part from the scraper output, removing log messages.
+    
+    Args:
+        output_text: The full output text from the scraper
+        
+    Returns:
+        The extracted schedule text
+    """
+    # Find the schedule section (from "=== Assignment for" to the end or next log message)
+    schedule_match = re.search(r'=== Assignment for .+? ===.*?(?=\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}|\Z)', 
+                              output_text, re.DOTALL)
+    
+    if schedule_match:
+        return schedule_match.group(0).strip()
+    
+    return ""
+
+
 def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MINUTES) -> None:
     """
     Run the daily schedule scraper script.
@@ -336,8 +374,34 @@ def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MIN
                 
                 # Check if the schedule has changed
                 if PUSHOVER_APP_TOKEN:
+                    # Extract just the schedule part from the output
+                    schedule_text = extract_schedule_from_output(result.stdout)
+                    
+                    if not schedule_text:
+                        logger.warning("Could not extract schedule from output")
+                        return
+                    
+                    # Clean up the schedule text to ensure consistent hashing
+                    # Remove any timestamps or variable data that might change between runs
+                    # Focus only on the core schedule information
+                    clean_schedule = re.sub(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}', '', schedule_text)
+                    
+                    # Get the previous hash
                     last_hash = get_last_schedule_hash(person)
-                    current_hash = save_schedule_hash(person, result.stdout)
+                    
+                    # Calculate the current hash
+                    current_hash = hashlib.sha256(clean_schedule.encode('utf-8')).hexdigest()
+                    
+                    # Debug logging
+                    if last_hash:
+                        logger.debug(f"Previous hash: {last_hash[:8]}...")
+                    logger.debug(f"Current hash: {current_hash[:8]}...")
+                    
+                    # Save the current hash
+                    hash_file = Path(f"data/last_schedule_hash_{person.replace(',', '_').replace(' ', '_')}.txt")
+                    hash_file.parent.mkdir(exist_ok=True, parents=True)
+                    with open(hash_file, 'w') as f:
+                        f.write(current_hash)
                     
                     # Extract schedule details
                     schedule_details = extract_schedule_details(result.stdout)
@@ -362,9 +426,9 @@ def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MIN
                             priority=1,  # Higher priority for changes
                             html=1
                         )
-                        logger.info(f"Sent schedule update notification for {person}")
+                        logger.info(f"Sent schedule update notification for {person} - hash changed from {last_hash[:8]}... to {current_hash[:8]}...")
                     else:
-                        logger.info(f"No changes to {person}'s schedule, skipping notification")
+                        logger.info(f"No changes to {person}'s schedule, skipping notification (hash: {current_hash[:8]}...)")
                 
             logger.info(f"Scraper output: {result.stdout}")
         
@@ -406,6 +470,7 @@ def parse_arguments():
                         help=f'Interval between checks in minutes (default: {DEFAULT_INTERVAL_MINUTES})')
     parser.add_argument('--pushover-token', type=str, default=PUSHOVER_APP_TOKEN,
                         help='Pushover APPLICATION TOKEN (not your user key) for sending notifications')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     return parser.parse_args()
 
 
@@ -416,6 +481,13 @@ def main() -> None:
     
     interval_minutes = args.interval
     person = args.person
+    
+    # Set debug mode if requested
+    global DEBUG
+    if args.debug:
+        DEBUG = True
+        logger.setLevel(logging.DEBUG)
+        logger.debug("Debug logging enabled")
     
     # Set the Pushover app token if provided
     global PUSHOVER_APP_TOKEN
