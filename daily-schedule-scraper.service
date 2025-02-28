@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily Schedule Scraper Service
+After=network.target
+
+[Service]
+Type=simple
+User=kb1900
+WorkingDirectory=/home/kb1900/daily-schedule
+ExecStart=/home/kb1900/.pyenv/versions/3.10.16/bin/python -m uv run run_scheduler.py
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target 
