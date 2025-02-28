@@ -20,6 +20,7 @@ import argparse
 import json
 import requests
 import hashlib
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -48,7 +49,7 @@ PUSHOVER_APP_TOKEN = None
 PUSHOVER_DEVICE = "KBPHONE"  
 
 
-def send_pushover_notification(title, message, priority=0):
+def send_pushover_notification(title, message, priority=0, html=1):
     """
     Send a push notification via Pushover.
     
@@ -56,6 +57,7 @@ def send_pushover_notification(title, message, priority=0):
         title: The notification title
         message: The notification message
         priority: Message priority (-2 to 2, with 2 being emergency)
+        html: Whether to enable HTML formatting (1 for yes, 0 for no)
         
     Returns:
         True if the notification was sent successfully, False otherwise
@@ -72,7 +74,8 @@ def send_pushover_notification(title, message, priority=0):
             "title": title,
             "message": message,
             "priority": priority,
-            "sound": "pushover"  # Default sound
+            "sound": "pushover",  # Default sound
+            "html": html          # Enable HTML formatting
         }
         
         logger.info(f"Sending Pushover notification: {title}")
@@ -129,6 +132,133 @@ def save_schedule_hash(person, schedule_text):
     return hash_value
 
 
+def extract_schedule_details(output_text):
+    """
+    Extract detailed schedule information from the scraper output.
+    
+    Args:
+        output_text: The text output from the scraper
+        
+    Returns:
+        A dictionary containing the extracted schedule details
+    """
+    details = {
+        'date': None,
+        'personnel_info': {},
+        'room_assignment': None,
+        'cases': []
+    }
+    
+    # Extract date
+    date_match = re.search(r'=== Assignment for .+ on (.+) ===', output_text)
+    if date_match:
+        details['date'] = date_match.group(1)
+    
+    # Extract personnel info
+    personnel_section = re.search(r'Personnel Information:(.*?)(?:\n\n|\n\w)', output_text, re.DOTALL)
+    if personnel_section:
+        personnel_text = personnel_section.group(1)
+        for line in personnel_text.strip().split('\n'):
+            if ':' in line:
+                key, value = line.strip().split(':', 1)
+                details['personnel_info'][key.strip()] = value.strip()
+    
+    # Extract room assignment
+    room_match = re.search(r'Room Assignment: (.+)', output_text)
+    if room_match:
+        details['room_assignment'] = room_match.group(1)
+    
+    # Extract cases
+    cases_section = re.search(r'Cases:(.*?)(?:\n\n\d|$)', output_text, re.DOTALL)
+    if cases_section:
+        cases_text = cases_section.group(1)
+        case_blocks = re.findall(r'Case \d+:(.*?)(?=\n  Case \d+:|\n\d|\Z)', cases_text, re.DOTALL)
+        
+        for case_block in case_blocks:
+            case = {}
+            for line in case_block.strip().split('\n'):
+                if ':' in line:
+                    key, value = line.strip().split(':', 1)
+                    case[key.strip()] = value.strip()
+            if case:
+                details['cases'].append(case)
+    
+    return details
+
+
+def format_schedule_notification(details):
+    """
+    Format the schedule details into a professional notification message.
+    
+    Args:
+        details: The extracted schedule details
+        
+    Returns:
+        A formatted HTML message for the notification
+    """
+    message = f"<b>📅 Schedule for {details['date']}</b>\n\n"
+    
+    # Add personnel info
+    if details['personnel_info']:
+        message += "<b>👤 Your Information:</b>\n"
+        for key, value in details['personnel_info'].items():
+            message += f"• <b>{key}:</b> {value}\n"
+        message += "\n"
+    
+    # Add room assignment
+    if details['room_assignment']:
+        message += f"<b>🏥 Room Assignment:</b> {details['room_assignment']}\n\n"
+    
+    # Add cases
+    if details['cases']:
+        message += f"<b>📋 Cases ({len(details['cases'])}):</b>\n"
+        for i, case in enumerate(details['cases'], 1):
+            message += f"<b>Case {i}:</b>\n"
+            
+            # Time
+            if 'Time' in case:
+                # Try to format the time more nicely
+                try:
+                    time_obj = datetime.strptime(case['Time'], "%Y-%m-%d %H:%M:%S")
+                    formatted_time = time_obj.strftime("%I:%M %p")
+                    message += f"• <b>Time:</b> {formatted_time}\n"
+                except:
+                    message += f"• <b>Time:</b> {case['Time']}\n"
+            
+            # Team
+            if 'Team' in case:
+                message += f"• <b>Team:</b> {case['Team']}\n"
+            
+            # Patient Age
+            if 'Patient Age' in case:
+                message += f"• <b>Patient:</b> {case['Patient Age']}\n"
+            
+            # Procedure (shortened)
+            if 'Procedure' in case:
+                proc = case['Procedure']
+                # Shorten the procedure description if it's too long
+                if len(proc) > 100:
+                    proc = proc[:97] + "..."
+                message += f"• <b>Procedure:</b> {proc}\n"
+            
+            # Anesthesia
+            if 'Anesthesia' in case:
+                message += f"• <b>Anesthesia:</b> {case['Anesthesia']}\n"
+            
+            # Surgeon
+            if 'Surgeon' in case:
+                message += f"• <b>Surgeon:</b> {case['Surgeon']}\n"
+            
+            message += "\n"
+    else:
+        message += "<b>No specific cases found for this assignment.</b>\n"
+    
+    # Add footer
+    message += "\n<i>Updated at " + datetime.now().strftime("%I:%M %p on %A, %B %d, %Y") + "</i>"
+    
+    return message
+
+
 def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MINUTES) -> None:
     """
     Run the daily schedule scraper script.
@@ -166,19 +296,26 @@ def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MIN
                     last_hash = get_last_schedule_hash(person)
                     current_hash = save_schedule_hash(person, result.stdout)
                     
+                    # Extract schedule details
+                    schedule_details = extract_schedule_details(result.stdout)
+                    
                     if last_hash is None:
-                        # First run, send initial notification
+                        # First run, send initial notification with full details
+                        notification_message = format_schedule_notification(schedule_details)
                         send_pushover_notification(
-                            f"Schedule for {person}",
-                            f"Initial schedule loaded. Check the console for details.",
-                            priority=0
+                            f"📅 Schedule for {person}",
+                            notification_message,
+                            priority=0,
+                            html=1
                         )
                     elif last_hash != current_hash:
-                        # Schedule has changed, send notification
+                        # Schedule has changed, send notification with full details
+                        notification_message = format_schedule_notification(schedule_details)
                         send_pushover_notification(
-                            f"Schedule Change for {person}",
-                            f"Your schedule has been updated. Check the console for details.",
-                            priority=1  # Higher priority for changes
+                            f"🔄 Schedule Updated for {person}",
+                            notification_message,
+                            priority=1,  # Higher priority for changes
+                            html=1
                         )
                 
             logger.info(f"Scraper output: {result.stdout}")
@@ -194,9 +331,10 @@ def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MIN
         # Send notification about the error
         if PUSHOVER_APP_TOKEN and person:
             send_pushover_notification(
-                "Schedule Scraper Error",
-                f"Error checking schedule for {person}. Please check the logs.",
-                priority=1
+                "⚠️ Schedule Scraper Error",
+                f"<b>Error checking schedule for {person}.</b>\n\nPlease check the logs for more details.",
+                priority=1,
+                html=1
             )
     except Exception as e:
         logger.error(f"Error running scraper: {e}")
@@ -204,9 +342,10 @@ def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MIN
         # Send notification about the error
         if PUSHOVER_APP_TOKEN and person:
             send_pushover_notification(
-                "Schedule Scraper Error",
-                f"Unexpected error: {str(e)}",
-                priority=1
+                "⚠️ Schedule Scraper Error",
+                f"<b>Unexpected error:</b>\n{str(e)}",
+                priority=1,
+                html=1
             )
 
 
@@ -247,9 +386,10 @@ def main() -> None:
         if person:
             # Send a test notification
             success = send_pushover_notification(
-                "Schedule Monitoring Started",
-                f"Now monitoring schedule for {person}. You'll be notified of any changes.",
-                priority=0
+                "🔔 Schedule Monitoring Started",
+                f"<b>Now monitoring schedule for {person}.</b>\n\nYou'll receive detailed notifications when your schedule changes.",
+                priority=0,
+                html=1
             )
             
             if not success:
@@ -283,9 +423,10 @@ def main() -> None:
         # Send notification that monitoring has stopped
         if PUSHOVER_APP_TOKEN and person:
             send_pushover_notification(
-                "Schedule Monitoring Stopped",
-                f"Monitoring for {person} has been stopped.",
-                priority=0
+                "🛑 Schedule Monitoring Stopped",
+                f"<b>Monitoring for {person} has been stopped.</b>",
+                priority=0,
+                html=1
             )
     except Exception as e:
         logger.error(f"Scheduler error: {e}")
@@ -293,9 +434,10 @@ def main() -> None:
         # Send notification about the error
         if PUSHOVER_APP_TOKEN and person:
             send_pushover_notification(
-                "Schedule Monitoring Error",
-                f"Scheduler encountered an error: {str(e)}",
-                priority=1
+                "⚠️ Schedule Monitoring Error",
+                f"<b>Scheduler encountered an error:</b>\n{str(e)}",
+                priority=1,
+                html=1
             )
 
 
