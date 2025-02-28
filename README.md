@@ -12,6 +12,7 @@ A Python script that scrapes the daily assignments schedule from Mount Sinai's i
 - Only saves new data when changes are detected (using content hashing)
 - Comprehensive logging
 - Extracts and displays detailed assignment information for a specific person
+- Continuous monitoring of assignments with customizable intervals
 
 ## Requirements
 
@@ -71,13 +72,28 @@ This will display:
   - Anesthesia type
   - Surgeon
 
-### Running the Scheduler
+### Continuous Monitoring
 
-The scheduler will run the scraper at regular intervals (default: every hour):
+The scheduler can run the scraper at regular intervals and optionally monitor a specific person's assignments:
 
 ```bash
+# Basic scheduler (checks every hour)
 uv run run_scheduler.py
+
+# Monitor a specific person's assignments
+uv run run_scheduler.py --person "Smith,J"
+
+# Change the check interval (e.g., every 30 minutes)
+uv run run_scheduler.py --interval 30
+
+# Monitor a specific person with custom interval
+uv run run_scheduler.py --person "Smith,J" --interval 15
 ```
+
+When monitoring a specific person, the scheduler will:
+- Display their assignments each time it checks
+- Notify you of any changes to their schedule
+- Continue running until stopped (Ctrl+C)
 
 ### Setting Up as a Systemd Service
 
@@ -169,6 +185,9 @@ To run this script automatically on a schedule using cron:
 ```bash
 # Run every hour
 0 * * * * cd /path/to/daily-schedule && /path/to/uv run daily_schedule_scraper.py
+
+# Run every hour and check a specific person's assignments
+0 * * * * cd /path/to/daily-schedule && /path/to/uv run daily_schedule_scraper.py --person "Smith,J" > ~/my_schedule.txt
 ```
 
 ### Using Systemd Timer
