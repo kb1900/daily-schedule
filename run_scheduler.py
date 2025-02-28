@@ -342,6 +342,7 @@ def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MIN
                     # Extract schedule details
                     schedule_details = extract_schedule_details(result.stdout)
                     
+                    # Only send notifications if this is the first run or if the schedule has changed
                     if last_hash is None:
                         # First run, send initial notification with full details
                         notification_message = format_schedule_notification(schedule_details)
@@ -351,6 +352,7 @@ def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MIN
                             priority=0,
                             html=1
                         )
+                        logger.info(f"Sent initial schedule notification for {person}")
                     elif last_hash != current_hash:
                         # Schedule has changed, send notification with full details
                         notification_message = format_schedule_notification(schedule_details)
@@ -360,6 +362,9 @@ def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MIN
                             priority=1,  # Higher priority for changes
                             html=1
                         )
+                        logger.info(f"Sent schedule update notification for {person}")
+                    else:
+                        logger.info(f"No changes to {person}'s schedule, skipping notification")
                 
             logger.info(f"Scraper output: {result.stdout}")
         
@@ -432,7 +437,7 @@ def main() -> None:
             # Send a test notification
             success = send_pushover_notification(
                 "🔔 Schedule Monitoring Started",
-                f"<b>Now monitoring schedule for {person}.</b>\n\nYou'll receive detailed notifications when your schedule changes.",
+                f"<b>Now monitoring schedule for {person}.</b>\n\nYou'll receive notifications when your schedule changes.",
                 priority=0,
                 html=1
             )
