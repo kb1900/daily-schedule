@@ -14,7 +14,14 @@ venv/
 ENV/
 
 # Data files
-data/
+data/*
+!data/.gitkeep
+!data/html/
+!data/json/
+data/html/*
+data/json/*
+!data/html/.gitkeep
+!data/json/.gitkeep
 *.html
 *.log
 
