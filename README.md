@@ -14,12 +14,14 @@ A Python script that scrapes the daily assignments schedule from Mount Sinai's i
 - Extracts and displays detailed assignment information for a specific person
 - Continuous monitoring of assignments with customizable intervals
 - Rich push notifications to your iPhone with complete schedule details
+- Environment variable support for easy configuration
 
 ## Requirements
 
 - Python 3.10+
 - `requests` library for HTTP requests
 - `beautifulsoup4` library for HTML parsing
+- `python-dotenv` library for environment variables
 - Pushover app on your iPhone (optional, for push notifications)
 
 ## Setup
@@ -45,13 +47,31 @@ uv add -r requirements.txt
 uv run setup_data_dirs.py
 ```
 
-5. (Optional) For push notifications:
+5. Configure environment variables:
+   - Copy the example environment file: `cp .env.example .env`
+   - Edit the `.env` file with your personal settings:
+     ```
+     # Pushover Configuration
+     PUSHOVER_USER_KEY=your_user_key_here
+     PUSHOVER_APP_TOKEN=your_app_token_here
+     PUSHOVER_DEVICE=your_device_name_here
+     
+     # User Configuration
+     DEFAULT_PERSON=Last,F
+     DEFAULT_INTERVAL=60
+     
+     # Application Configuration
+     DEBUG=false
+     ```
+
+6. (Optional) For push notifications:
    - Install the [Pushover app](https://pushover.net/) on your iPhone
    - Create an application token on the [Pushover website](https://pushover.net/apps/build):
      - Go to https://pushover.net/apps/build
      - Fill in the application details (Name: "Daily Schedule Monitor", Type: "Application")
      - Click "Create Application"
      - Save the API Token/Key that is generated (this is your application token)
+   - Add your Pushover credentials to the `.env` file
 
 ## Usage
 
@@ -100,6 +120,14 @@ uv run run_scheduler.py --interval 30
 uv run run_scheduler.py --person "Smith,J" --interval 15
 ```
 
+If you've configured the `.env` file with your default settings, you can simply run:
+
+```bash
+uv run run_scheduler.py
+```
+
+And it will use your default person and interval settings from the `.env` file.
+
 When monitoring a specific person, the scheduler will:
 - Display their assignments each time it checks
 - Notify you of any changes to their schedule
@@ -119,13 +147,13 @@ To receive push notifications on your iPhone when your schedule changes:
    - Click "Create Application"
    - Save the API Token/Key that is generated (this is your application token)
 
-3. Run the scheduler with the `--pushover-token` flag:
+3. Configure your Pushover credentials in the `.env` file or run the scheduler with the `--pushover-token` flag:
 
 ```bash
 uv run run_scheduler.py --person "Smith,J" --pushover-token "YOUR_APP_TOKEN"
 ```
 
-⚠️ **Important**: The `--pushover-token` parameter requires your application token (from step 2), NOT your user key. Your user key is already configured in the script.
+⚠️ **Important**: The `--pushover-token` parameter requires your application token (from step 2), NOT your user key. Your user key should be configured in the `.env` file.
 
 #### Enhanced Notifications
 
@@ -137,7 +165,7 @@ The push notifications include comprehensive details about your schedule:
   - Time (formatted as AM/PM)
   - Team members
   - Patient age
-  - Procedure description (shortened if too long)
+  - Procedure description (properly formatted)
   - Anesthesia type
   - Surgeon name
 
@@ -183,6 +211,19 @@ sudo systemctl start daily-schedule-scraper.service
 ```bash
 sudo systemctl status daily-schedule-scraper.service
 ```
+
+## Environment Variables
+
+The following environment variables can be configured in the `.env` file:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PUSHOVER_USER_KEY` | Your Pushover user key | - |
+| `PUSHOVER_APP_TOKEN` | Your Pushover application token | - |
+| `PUSHOVER_DEVICE` | Your Pushover device name | KBPHONE |
+| `DEFAULT_PERSON` | Default person to monitor | - |
+| `DEFAULT_INTERVAL` | Default interval in minutes | 60 |
+| `DEBUG` | Enable debug logging | false |
 
 ## Data Storage
 
@@ -250,8 +291,8 @@ To run this script automatically on a schedule using cron:
 # Run every hour and check a specific person's assignments
 0 * * * * cd /path/to/daily-schedule && /path/to/uv run daily_schedule_scraper.py --person "Smith,J" > ~/my_schedule.txt
 
-# Run every hour with push notifications
-0 * * * * cd /path/to/daily-schedule && /path/to/uv run run_scheduler.py --person "Smith,J" --pushover-token "YOUR_APP_TOKEN" --interval 60
+# Run every hour with push notifications (using environment variables)
+0 * * * * cd /path/to/daily-schedule && /path/to/uv run run_scheduler.py
 ```
 
 ### Using Systemd Timer
@@ -288,7 +329,7 @@ sudo systemctl start daily-schedule-scraper.timer
 If you're not receiving Pushover notifications:
 
 1. **Check your application token**: Make sure you're using the application token from the Pushover website, not your user key. They are different!
-2. **Verify your device name**: The default device name is set to "KBPHONE". If your device has a different name, update the `PUSHOVER_DEVICE` constant in the script.
+2. **Verify your device name**: The default device name is set to "KBPHONE". If your device has a different name, update the `PUSHOVER_DEVICE` value in your `.env` file.
 3. **Check the logs**: Look at the `scheduler.log` file for any error messages related to Pushover.
 4. **Test Pushover directly**: You can test your Pushover setup using curl:
    ```bash

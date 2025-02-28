@@ -27,6 +27,8 @@ data/json/*
 
 # Environment variables
 .env
+.env.*
+!.env.example
 
 # IDE files
 .idea/

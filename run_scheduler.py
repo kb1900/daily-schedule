@@ -21,8 +21,21 @@ import json
 import requests
 import hashlib
 import re
+import os
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, Optional, List, Any
+
+# Try to import dotenv for environment variables
+try:
+    from dotenv import load_dotenv
+    # Load environment variables from .env file
+    load_dotenv()
+    ENV_LOADED = True
+except ImportError:
+    ENV_LOADED = False
+    print("python-dotenv not installed. Environment variables will not be loaded from .env file.")
+    print("To install: uv add python-dotenv")
 
 # Configure logging
 logging.basicConfig(
@@ -36,17 +49,21 @@ logging.basicConfig(
 logger = logging.getLogger('scheduler')
 
 # Constants
-DEFAULT_INTERVAL_MINUTES = 60  # Run every hour by default
+DEFAULT_INTERVAL_MINUTES = int(os.getenv('DEFAULT_INTERVAL', '60'))  # Run every hour by default
 SCRAPER_SCRIPT = "daily_schedule_scraper.py"
 
 # Pushover configuration
 PUSHOVER_API_URL = "https://api.pushover.net/1/messages.json"
 # Your Pushover user key (identifies you as the recipient)
-PUSHOVER_USER_KEY = "uxnmijx7ej1d879sfud8aeqwg5mg1f"  
-# Application token (identifies your app as the sender) - will be set via command line argument
-PUSHOVER_APP_TOKEN = None  
+PUSHOVER_USER_KEY = os.getenv('PUSHOVER_USER_KEY', 'uxnmijx7ej1d879sfud8aeqwg5mg1f')
+# Application token (identifies your app as the sender) - will be set via command line argument or env var
+PUSHOVER_APP_TOKEN = os.getenv('PUSHOVER_APP_TOKEN', None)
 # Your device name
-PUSHOVER_DEVICE = "KBPHONE"  
+PUSHOVER_DEVICE = os.getenv('PUSHOVER_DEVICE', 'KBPHONE')
+# Default person to monitor
+DEFAULT_PERSON = os.getenv('DEFAULT_PERSON', None)
+# Debug mode
+DEBUG = os.getenv('DEBUG', 'false').lower() in ('true', '1', 't', 'yes', 'y')
 
 
 def send_pushover_notification(title, message, priority=0, html=1):
@@ -79,6 +96,9 @@ def send_pushover_notification(title, message, priority=0, html=1):
         }
         
         logger.info(f"Sending Pushover notification: {title}")
+        if DEBUG:
+            logger.debug(f"Notification message: {message}")
+            
         response = requests.post(PUSHOVER_API_URL, data=payload, timeout=10)
         response.raise_for_status()
         
@@ -186,6 +206,32 @@ def extract_schedule_details(output_text):
     return details
 
 
+def format_procedure_description(procedure: str) -> str:
+    """
+    Format a procedure description to be more readable in a notification.
+    
+    Args:
+        procedure: The raw procedure description
+        
+    Returns:
+        A formatted procedure description
+    """
+    # Remove CPT codes section if present
+    if '[(cpt)' in procedure:
+        procedure = procedure.split('[(cpt)')[0].strip()
+    
+    # Remove anesthesia type if present at the end in parentheses
+    if procedure.endswith(')'):
+        last_open_paren = procedure.rfind('(')
+        if last_open_paren != -1:
+            procedure = procedure[:last_open_paren].strip()
+    
+    # Clean up any extra whitespace or newlines
+    procedure = re.sub(r'\s+', ' ', procedure).strip()
+    
+    return procedure
+
+
 def format_schedule_notification(details):
     """
     Format the schedule details into a professional notification message.
@@ -233,12 +279,9 @@ def format_schedule_notification(details):
             if 'Patient Age' in case:
                 message += f"• <b>Patient:</b> {case['Patient Age']}\n"
             
-            # Procedure (shortened)
+            # Procedure (properly formatted)
             if 'Procedure' in case:
-                proc = case['Procedure']
-                # Shorten the procedure description if it's too long
-                if len(proc) > 100:
-                    proc = proc[:97] + "..."
+                proc = format_procedure_description(case['Procedure'])
                 message += f"• <b>Procedure:</b> {proc}\n"
             
             # Anesthesia
@@ -352,10 +395,11 @@ def run_scraper(person: str = None, interval_minutes: int = DEFAULT_INTERVAL_MIN
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Daily Schedule Scraper Scheduler')
-    parser.add_argument('--person', type=str, help='Name of the person to monitor assignments for (e.g., "Last,F")')
+    parser.add_argument('--person', type=str, default=DEFAULT_PERSON,
+                        help=f'Name of the person to monitor assignments for (e.g., "Last,F"). Default: {DEFAULT_PERSON or "None"}')
     parser.add_argument('--interval', type=int, default=DEFAULT_INTERVAL_MINUTES, 
                         help=f'Interval between checks in minutes (default: {DEFAULT_INTERVAL_MINUTES})')
-    parser.add_argument('--pushover-token', type=str, 
+    parser.add_argument('--pushover-token', type=str, default=PUSHOVER_APP_TOKEN,
                         help='Pushover APPLICATION TOKEN (not your user key) for sending notifications')
     return parser.parse_args()
 
@@ -370,7 +414,8 @@ def main() -> None:
     
     # Set the Pushover app token if provided
     global PUSHOVER_APP_TOKEN
-    PUSHOVER_APP_TOKEN = args.pushover_token
+    if args.pushover_token:
+        PUSHOVER_APP_TOKEN = args.pushover_token
     
     if PUSHOVER_APP_TOKEN:
         logger.info("Pushover notifications enabled")
