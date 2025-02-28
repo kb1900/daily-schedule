@@ -13,12 +13,14 @@ A Python script that scrapes the daily assignments schedule from Mount Sinai's i
 - Comprehensive logging
 - Extracts and displays detailed assignment information for a specific person
 - Continuous monitoring of assignments with customizable intervals
+- Push notifications to your iPhone when your schedule changes
 
 ## Requirements
 
 - Python 3.10+
 - `requests` library for HTTP requests
 - `beautifulsoup4` library for HTML parsing
+- Pushover app on your iPhone (optional, for push notifications)
 
 ## Setup
 
@@ -42,6 +44,10 @@ uv add -r requirements.txt
 ```bash
 uv run setup_data_dirs.py
 ```
+
+5. (Optional) For push notifications:
+   - Install the [Pushover app](https://pushover.net/) on your iPhone
+   - Create an application token on the [Pushover website](https://pushover.net/apps/build)
 
 ## Usage
 
@@ -95,6 +101,31 @@ When monitoring a specific person, the scheduler will:
 - Notify you of any changes to their schedule
 - Continue running until stopped (Ctrl+C)
 
+### Push Notifications
+
+To receive push notifications on your iPhone when your schedule changes:
+
+1. Install the Pushover app on your iPhone
+2. Create an application on the [Pushover website](https://pushover.net/apps/build)
+3. Get your application token
+4. Run the scheduler with the `--pushover-token` flag:
+
+```bash
+uv run run_scheduler.py --person "Smith,J" --pushover-token "YOUR_APP_TOKEN"
+```
+
+You will receive notifications when:
+- Monitoring starts
+- Your schedule changes
+- Errors occur
+- Monitoring stops
+
+The notifications include:
+- A title indicating what happened
+- A brief message with details
+- Different priority levels for different events
+- Different sounds for different notification types
+
 ### Setting Up as a Systemd Service
 
 To run the scheduler as a systemd service:
@@ -130,9 +161,10 @@ The script creates the following directory structure:
 
 ```
 data/
-├── html/           # Raw HTML files
-├── json/           # Parsed JSON data
-└── last_content_hash.txt  # Hash of the last processed content
+├── html/                                # Raw HTML files
+├── json/                                # Parsed JSON data
+├── last_content_hash.txt                # Hash of the last processed content
+└── last_schedule_hash_Smith_J.txt       # Hash of the last schedule for a person
 ```
 
 Each file is timestamped with the date and time it was created.
@@ -188,6 +220,9 @@ To run this script automatically on a schedule using cron:
 
 # Run every hour and check a specific person's assignments
 0 * * * * cd /path/to/daily-schedule && /path/to/uv run daily_schedule_scraper.py --person "Smith,J" > ~/my_schedule.txt
+
+# Run every hour with push notifications
+0 * * * * cd /path/to/daily-schedule && /path/to/uv run run_scheduler.py --person "Smith,J" --pushover-token "YOUR_APP_TOKEN" --interval 60
 ```
 
 ### Using Systemd Timer
