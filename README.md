@@ -20,11 +20,25 @@ A Python script that scrapes the daily assignments schedule from Mount Sinai's i
 
 ## Setup
 
-1. Make sure you're connected to the Mount Sinai VPN
-2. Install dependencies:
+1. Clone the repository:
+
+```bash
+git clone https://github.com/yourusername/daily-schedule.git
+cd daily-schedule
+```
+
+2. Make sure you're connected to the Mount Sinai VPN
+
+3. Install dependencies:
 
 ```bash
 uv add -r requirements.txt
+```
+
+4. Set up the data directories:
+
+```bash
+uv run setup_data_dirs.py
 ```
 
 ## Usage
