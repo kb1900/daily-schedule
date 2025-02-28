@@ -13,7 +13,7 @@ A Python script that scrapes the daily assignments schedule from Mount Sinai's i
 - Comprehensive logging
 - Extracts and displays detailed assignment information for a specific person
 - Continuous monitoring of assignments with customizable intervals
-- Push notifications to your iPhone when your schedule changes
+- Rich push notifications to your iPhone with complete schedule details
 
 ## Requirements
 
@@ -127,15 +127,31 @@ uv run run_scheduler.py --person "Smith,J" --pushover-token "YOUR_APP_TOKEN"
 
 ⚠️ **Important**: The `--pushover-token` parameter requires your application token (from step 2), NOT your user key. Your user key is already configured in the script.
 
+#### Enhanced Notifications
+
+The push notifications include comprehensive details about your schedule:
+
+- **Schedule Overview**: Date and personnel information
+- **Room Assignment**: Your assigned room
+- **Detailed Case Information**:
+  - Time (formatted as AM/PM)
+  - Team members
+  - Patient age
+  - Procedure description (shortened if too long)
+  - Anesthesia type
+  - Surgeon name
+
+All notifications use HTML formatting with emojis and proper formatting to make the information easy to read on your iPhone.
+
 You will receive notifications when:
-- Monitoring starts
-- Your schedule changes
-- Errors occur
-- Monitoring stops
+- Monitoring starts (🔔)
+- Your schedule changes (🔄)
+- Errors occur (⚠️)
+- Monitoring stops (🛑)
 
 The notifications include:
 - A title indicating what happened
-- A brief message with details
+- A detailed message with your complete schedule
 - Different priority levels for different events
 - Different sounds for different notification types
 
