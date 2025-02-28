@@ -8,6 +8,7 @@ when changes are detected.
 
 Usage:
     uv run daily_schedule_scraper.py
+    uv run daily_schedule_scraper.py --person "Last,F"  # Extract assignments for a specific person
 """
 
 import os
@@ -16,6 +17,7 @@ import time
 import hashlib
 import json
 import logging
+import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -372,8 +374,144 @@ def save_parsed_data(parsed_data: Dict) -> Path:
     return file_path
 
 
+def find_person_assignment(parsed_data: Dict, person_name: str) -> Dict:
+    """
+    Find the assignment details for a specific person.
+    
+    Args:
+        parsed_data: The parsed schedule data
+        person_name: The name of the person to find (e.g., "Last,F")
+        
+    Returns:
+        A dictionary containing the person's assignment details
+    """
+    logger.info(f"Finding assignment for {person_name}")
+    
+    # Normalize the person name for case-insensitive comparison
+    person_name_lower = person_name.lower()
+    
+    # Initialize the result
+    result = {
+        'date': parsed_data['formatted_date'],
+        'person': person_name,
+        'found': False,
+        'personnel_info': None,
+        'room_assignment': None,
+        'cases': []
+    }
+    
+    # Search for the person in the personnel schedule
+    for group, entries in parsed_data['personnel_schedule'].items():
+        for entry in entries:
+            if 'person' in entry and entry['person'].lower() == person_name_lower:
+                result['found'] = True
+                result['personnel_info'] = {
+                    'group': group,
+                    **entry
+                }
+                break
+        if result['found']:
+            break
+    
+    # If the person was found and has an assignment
+    if result['found'] and 'assignment' in result['personnel_info']:
+        assignment = result['personnel_info']['assignment']
+        
+        # Check if the assignment corresponds to a room in the procedure schedule
+        if assignment in parsed_data['procedure_schedule']:
+            result['room_assignment'] = assignment
+            result['cases'] = parsed_data['procedure_schedule'][assignment]
+        else:
+            # Search for the person in all procedure rooms
+            for room, procedures in parsed_data['procedure_schedule'].items():
+                for procedure in procedures:
+                    if 'personnel' in procedure and any(p.lower() == person_name_lower for p in procedure['personnel']):
+                        if result['room_assignment'] is None:
+                            result['room_assignment'] = room
+                        if room not in [case['room'] for case in result['cases']]:
+                            for proc in procedures:
+                                proc_copy = proc.copy()
+                                proc_copy['room'] = room
+                                result['cases'].append(proc_copy)
+                        break
+    
+    # If no cases were found but the person was found in the personnel schedule
+    if result['found'] and not result['cases']:
+        logger.info(f"No specific cases found for {person_name}")
+    elif not result['found']:
+        logger.info(f"Person {person_name} not found in the schedule")
+    else:
+        logger.info(f"Found {len(result['cases'])} cases for {person_name}")
+    
+    return result
+
+
+def print_person_assignment(assignment: Dict) -> None:
+    """
+    Print the assignment details for a person in a readable format.
+    
+    Args:
+        assignment: The assignment details dictionary
+    """
+    if not assignment['found']:
+        print(f"\nPerson '{assignment['person']}' not found in the schedule for {assignment['date']}.")
+        return
+    
+    print(f"\n=== Assignment for {assignment['person']} on {assignment['date']} ===\n")
+    
+    # Print personnel info
+    if assignment['personnel_info']:
+        print("Personnel Information:")
+        print(f"  Group: {assignment['personnel_info']['group']}")
+        if 'rotation' in assignment['personnel_info']:
+            print(f"  Rotation: {assignment['personnel_info']['rotation']}")
+        if 'assignment' in assignment['personnel_info']:
+            print(f"  Assignment: {assignment['personnel_info']['assignment']}")
+        if 'comment' in assignment['personnel_info']:
+            print(f"  Comment: {assignment['personnel_info']['comment']}")
+        print()
+    
+    # Print room assignment
+    if assignment['room_assignment']:
+        print(f"Room Assignment: {assignment['room_assignment']}")
+        print()
+    
+    # Print cases
+    if assignment['cases']:
+        print("Cases:")
+        for i, case in enumerate(assignment['cases'], 1):
+            print(f"  Case {i}:")
+            if 'room' in case and case['room'] != assignment['room_assignment']:
+                print(f"    Room: {case['room']}")
+            if 'time' in case:
+                print(f"    Time: {case['time']}")
+            if 'personnel' in case:
+                print(f"    Team: {', '.join(case['personnel'])}")
+            if 'patient_age' in case:
+                print(f"    Patient Age: {case['patient_age']}")
+            if 'description' in case:
+                print(f"    Procedure: {case['description']}")
+            if 'anesthesia_type' in case:
+                print(f"    Anesthesia: {case['anesthesia_type']}")
+            if 'surgeon' in case:
+                print(f"    Surgeon: {case['surgeon']}")
+            print()
+    else:
+        print("No specific cases found for this assignment.")
+
+
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Daily Schedule Scraper')
+    parser.add_argument('--person', type=str, help='Name of the person to find assignments for (e.g., "Last,F")')
+    return parser.parse_args()
+
+
 def main() -> None:
     """Main function to run the scraper."""
+    # Parse command line arguments
+    args = parse_arguments()
+    
     logger.info("Starting daily schedule scraper")
     
     # Set up directories
@@ -386,25 +524,32 @@ def main() -> None:
         return
     
     # Check if content has changed
-    if not has_content_changed(content):
-        logger.info("No changes detected, skipping save")
-        return
-    
-    # Save the raw HTML
-    html_path = save_html_content(content)
+    content_changed = has_content_changed(content)
     
     # Parse the content
     parsed_data = parse_schedule(content)
     
-    # Save the parsed data
-    json_path = save_parsed_data(parsed_data)
+    # If a specific person was requested, find and print their assignment
+    if args.person:
+        person_assignment = find_person_assignment(parsed_data, args.person)
+        print_person_assignment(person_assignment)
     
-    # Save the content hash
-    save_content_hash(content)
-    
-    logger.info(f"Successfully processed and saved schedule data")
-    logger.info(f"HTML saved to: {html_path}")
-    logger.info(f"JSON saved to: {json_path}")
+    # Only save if content has changed
+    if content_changed:
+        # Save the raw HTML
+        html_path = save_html_content(content)
+        
+        # Save the parsed data
+        json_path = save_parsed_data(parsed_data)
+        
+        # Save the content hash
+        save_content_hash(content)
+        
+        logger.info(f"Successfully processed and saved schedule data")
+        logger.info(f"HTML saved to: {html_path}")
+        logger.info(f"JSON saved to: {json_path}")
+    else:
+        logger.info("No changes detected, skipping save")
 
 
 if __name__ == "__main__":

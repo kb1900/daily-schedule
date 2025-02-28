@@ -11,6 +11,7 @@ A Python script that scrapes the daily assignments schedule from Mount Sinai's i
 - Saves raw HTML and parsed JSON data
 - Only saves new data when changes are detected (using content hashing)
 - Comprehensive logging
+- Extracts and displays detailed assignment information for a specific person
 
 ## Requirements
 
@@ -23,7 +24,7 @@ A Python script that scrapes the daily assignments schedule from Mount Sinai's i
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/daily-schedule.git
+git clone https://github.com/kb1900/daily-schedule.git
 cd daily-schedule
 ```
 
@@ -50,6 +51,25 @@ Run the script:
 ```bash
 uv run daily_schedule_scraper.py
 ```
+
+### Finding Your Assignments
+
+To find assignments for a specific person, use the `--person` flag followed by the person's name as it appears in the schedule (typically "Last,F" format):
+
+```bash
+uv run daily_schedule_scraper.py --person "Smith,J"
+```
+
+This will display:
+- Your personnel information (group, rotation, assignment)
+- Your room assignment
+- All cases you're assigned to, including:
+  - Time
+  - Team members
+  - Patient age
+  - Procedure description
+  - Anesthesia type
+  - Surgeon
 
 ### Running the Scheduler
 
