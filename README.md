@@ -47,7 +47,11 @@ uv run setup_data_dirs.py
 
 5. (Optional) For push notifications:
    - Install the [Pushover app](https://pushover.net/) on your iPhone
-   - Create an application token on the [Pushover website](https://pushover.net/apps/build)
+   - Create an application token on the [Pushover website](https://pushover.net/apps/build):
+     - Go to https://pushover.net/apps/build
+     - Fill in the application details (Name: "Daily Schedule Monitor", Type: "Application")
+     - Click "Create Application"
+     - Save the API Token/Key that is generated (this is your application token)
 
 ## Usage
 
@@ -106,13 +110,22 @@ When monitoring a specific person, the scheduler will:
 To receive push notifications on your iPhone when your schedule changes:
 
 1. Install the Pushover app on your iPhone
-2. Create an application on the [Pushover website](https://pushover.net/apps/build)
-3. Get your application token
-4. Run the scheduler with the `--pushover-token` flag:
+2. Create an application on the [Pushover website](https://pushover.net/apps/build):
+   - Go to https://pushover.net/apps/build
+   - Fill in the application details:
+     - Name: Daily Schedule Monitor
+     - Type: Application
+     - Description: Monitors changes to my daily schedule
+   - Click "Create Application"
+   - Save the API Token/Key that is generated (this is your application token)
+
+3. Run the scheduler with the `--pushover-token` flag:
 
 ```bash
 uv run run_scheduler.py --person "Smith,J" --pushover-token "YOUR_APP_TOKEN"
 ```
+
+⚠️ **Important**: The `--pushover-token` parameter requires your application token (from step 2), NOT your user key. Your user key is already configured in the script.
 
 You will receive notifications when:
 - Monitoring starts
@@ -251,6 +264,24 @@ sudo systemctl daemon-reload
 sudo systemctl enable daily-schedule-scraper.timer
 sudo systemctl start daily-schedule-scraper.timer
 ```
+
+## Troubleshooting
+
+### Pushover Notifications Not Working
+
+If you're not receiving Pushover notifications:
+
+1. **Check your application token**: Make sure you're using the application token from the Pushover website, not your user key. They are different!
+2. **Verify your device name**: The default device name is set to "KBPHONE". If your device has a different name, update the `PUSHOVER_DEVICE` constant in the script.
+3. **Check the logs**: Look at the `scheduler.log` file for any error messages related to Pushover.
+4. **Test Pushover directly**: You can test your Pushover setup using curl:
+   ```bash
+   curl -s \
+     --form-string "token=YOUR_APP_TOKEN" \
+     --form-string "user=YOUR_USER_KEY" \
+     --form-string "message=Test message" \
+     https://api.pushover.net/1/messages.json
+   ```
 
 ## License
 

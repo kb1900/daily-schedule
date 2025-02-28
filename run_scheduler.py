@@ -9,6 +9,7 @@ Usage:
     uv run run_scheduler.py
     uv run run_scheduler.py --person "Last,F"  # Monitor assignments for a specific person
     uv run run_scheduler.py --interval 30  # Change the check interval (in minutes)
+    uv run run_scheduler.py --person "Last,F" --pushover-token "APP_TOKEN"  # With push notifications
 """
 
 import time
@@ -39,9 +40,12 @@ SCRAPER_SCRIPT = "daily_schedule_scraper.py"
 
 # Pushover configuration
 PUSHOVER_API_URL = "https://api.pushover.net/1/messages.json"
-PUSHOVER_USER_KEY = "uxnmijx7ej1d879sfud8aeqwg5mg1f"  # Your Pushover user key
-PUSHOVER_APP_TOKEN = None  # Will be set via command line argument
-PUSHOVER_DEVICE = "KBPHONE"  # Your device name
+# Your Pushover user key (identifies you as the recipient)
+PUSHOVER_USER_KEY = "uxnmijx7ej1d879sfud8aeqwg5mg1f"  
+# Application token (identifies your app as the sender) - will be set via command line argument
+PUSHOVER_APP_TOKEN = None  
+# Your device name
+PUSHOVER_DEVICE = "KBPHONE"  
 
 
 def send_pushover_notification(title, message, priority=0):
@@ -62,8 +66,8 @@ def send_pushover_notification(title, message, priority=0):
     
     try:
         payload = {
-            "token": PUSHOVER_APP_TOKEN,
-            "user": PUSHOVER_USER_KEY,
+            "token": PUSHOVER_APP_TOKEN,  # Application token (from Pushover website)
+            "user": PUSHOVER_USER_KEY,    # User key (from your Pushover account)
             "device": PUSHOVER_DEVICE,
             "title": title,
             "message": message,
@@ -71,6 +75,7 @@ def send_pushover_notification(title, message, priority=0):
             "sound": "pushover"  # Default sound
         }
         
+        logger.info(f"Sending Pushover notification: {title}")
         response = requests.post(PUSHOVER_API_URL, data=payload, timeout=10)
         response.raise_for_status()
         
@@ -211,7 +216,8 @@ def parse_arguments():
     parser.add_argument('--person', type=str, help='Name of the person to monitor assignments for (e.g., "Last,F")')
     parser.add_argument('--interval', type=int, default=DEFAULT_INTERVAL_MINUTES, 
                         help=f'Interval between checks in minutes (default: {DEFAULT_INTERVAL_MINUTES})')
-    parser.add_argument('--pushover-token', type=str, help='Pushover application token for sending notifications')
+    parser.add_argument('--pushover-token', type=str, 
+                        help='Pushover APPLICATION TOKEN (not your user key) for sending notifications')
     return parser.parse_args()
 
 
@@ -229,13 +235,27 @@ def main() -> None:
     
     if PUSHOVER_APP_TOKEN:
         logger.info("Pushover notifications enabled")
+        print("Pushover notifications enabled")
+        
+        # Verify the token format
+        if PUSHOVER_APP_TOKEN == PUSHOVER_USER_KEY:
+            logger.warning("WARNING: The Pushover token provided appears to be your user key, not an application token.")
+            print("\n⚠️  WARNING: The Pushover token provided appears to be your user key, not an application token.")
+            print("   You need to create an application at https://pushover.net/apps/build")
+            print("   and use the application token/key provided there.\n")
+        
         if person:
             # Send a test notification
-            send_pushover_notification(
+            success = send_pushover_notification(
                 "Schedule Monitoring Started",
                 f"Now monitoring schedule for {person}. You'll be notified of any changes.",
                 priority=0
             )
+            
+            if not success:
+                print("\n⚠️  Failed to send test notification. Please check your Pushover configuration.")
+                print("   Make sure you've created an application at https://pushover.net/apps/build")
+                print("   and are using the correct application token.\n")
     else:
         logger.info("Pushover notifications disabled (no app token provided)")
     
